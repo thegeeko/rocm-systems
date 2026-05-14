@@ -4053,8 +4053,23 @@ HSAKMT_STATUS hsakmt_fmm_register_graphics_handle(HsaKFDContext *ctx,
 		r = hsakmt_ioctl(ctx->fd, AMDKFD_IOC_GET_DMABUF_INFO, (void *)&infoArgs);
 	}
 
-	if (r)
-		goto error_free_metadata;
+	if (r) {
+		struct stat st;
+
+		if (!gpu_id_array || gpu_id_array_size < sizeof(uint32_t))
+			goto error_free_metadata;
+
+		if (fstat(GraphicsResourceHandle, &st) || st.st_size <= 0)
+			goto error_free_metadata;
+
+		infoArgs.size = st.st_size;
+		infoArgs.metadata_size = 0;
+		infoArgs.gpu_id = gpu_id_array[0];
+		infoArgs.flags = KFD_IOC_ALLOC_MEM_FLAGS_GTT |
+				 KFD_IOC_ALLOC_MEM_FLAGS_UNCACHED |
+				 KFD_IOC_ALLOC_MEM_FLAGS_WRITABLE;
+		r = 0;
+	}
 
 	/* Choose aperture based on GPU and allocate virtual address */
 	gpu_mem_id = gpu_mem_find_by_gpu_id(fmm_ctx, infoArgs.gpu_id);
@@ -4701,7 +4716,7 @@ static void fmm_clear_aperture(manageable_aperture_t *app)
 void hsakmt_fmm_clear_all_mem(HsaKFDContext *ctx)
 {
 	uint32_t i;
-	
+
 	struct hsa_kfd_fmm_context *fmm_ctx = hsakmt_kfdcontext_get_fmm_context(ctx);
 	/* Close render node FDs. The child process needs to open new ones */
 	for (i = 0; i <= DRM_LAST_RENDER_NODE - DRM_FIRST_RENDER_NODE; i++) {
@@ -4722,7 +4737,7 @@ void hsakmt_fmm_clear_all_aperture(HsaKFDContext *ctx)
 {
 	uint32_t i;
 	void *map_addr;
-	
+
 	struct hsa_kfd_fmm_context *fmm_ctx = hsakmt_kfdcontext_get_fmm_context(ctx);
 
 	fmm_clear_aperture(&fmm_ctx->mem_handle_aperture);
